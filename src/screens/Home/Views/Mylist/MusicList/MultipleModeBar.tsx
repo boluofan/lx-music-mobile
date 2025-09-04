@@ -7,7 +7,7 @@ import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
 import { BorderWidths } from '@/theme'
 
-export type SelectMode = 'single' | 'range'
+export type SelectMode = 'single' | 'range' | 'drag'
 
 export interface MultipleModeBarProps {
   onSwitchMode: (mode: SelectMode) => void
@@ -121,6 +121,9 @@ export default forwardRef<MultipleModeBarType, MultipleModeBarProps>(({ onSelect
           </Button>
           <Button onPress={() => { onSwitchMode('range') }} style={{ ...styles.btn, backgroundColor: selectMode == 'range' ? theme['c-button-background'] : 'rgba(0,0,0,0)' }}>
             <Text color={theme['c-button-font']}>{global.i18n.t('list_select_range')}</Text>
+          </Button>
+          <Button onPress={() => { onSwitchMode('drag') }} style={{ ...styles.btn, backgroundColor: selectMode == 'drag' ? theme['c-button-background'] : 'rgba(0,0,0,0)' }}>
+            <Text color={theme['c-button-font']}>{global.i18n.t('list_select_drag')}</Text>
           </Button>
         </View>
         <TouchableOpacity onPress={handleSelectAll} style={styles.btn}>

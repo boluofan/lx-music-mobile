@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react'
 
 import listState from '@/store/list/state'
 import ListMenu, { type ListMenuType, type Position, type SelectInfo } from './ListMenu'
-import { handleDislikeMusic, handlePlay, handlePlayLater, handleRemove, handleShare, handleShowMusicSourceDetail, handleUpdateMusicInfo, handleUpdateMusicPosition } from './listAction'
+import { handleDislikeMusic, handlePlay, handlePlayLater, handleRemove, handleShare, handleShowMusicSourceDetail, handleUpdateMusicInfo, handleUpdateMusicPosition, handleTopMusic as handleTopMusicAction } from './listAction'
 import List, { type ListType } from './List'
 import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
 import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } from '@/components/MusicMultiAddModal'
@@ -108,6 +108,10 @@ export default () => {
       listMusicAddRef.current?.show({ musicInfo: info.musicInfo, listId: info.listId, isMove: true })
     }
   }, [])
+
+  const handleTopMusic = useCallback((info: SelectInfo) => {
+    handleTopMusicAction(info.listId, info.musicInfo, info.selectedList, hancelExitSelect)
+  }, [hancelExitSelect])
   const handleEditMetadata = useCallback((info: SelectInfo) => {
     if (info.musicInfo.source != 'local') return
     selectedInfoRef.current = info
@@ -161,6 +165,7 @@ export default () => {
         onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}
         onAdd={handleAddMusic}
         onMove={handleMoveMusic}
+        onTop={handleTopMusic}
         onEditMetadata={handleEditMetadata}
         onChangePosition={info => musicPositionModalRef.current?.show(info)}
         onToggleSource={info => musicToggleModalRef.current?.show(info)}

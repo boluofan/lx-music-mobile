@@ -49,6 +49,15 @@ export const handleUpdateMusicPosition = (position: number, listId: SelectInfo['
   }
 }
 
+export const handleTopMusic = (listId: SelectInfo['listId'], musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {
+  if (selectedList.length) {
+    void updateListMusicPosition(listId, 0, selectedList.map(s => s.id))
+    onCancelSelect()
+  } else {
+    void updateListMusicPosition(listId, 0, [musicInfo.id])
+  }
+}
+
 export const handleUpdateMusicInfo = (listId: SelectInfo['listId'], musicInfo: LX.Music.MusicInfoLocal, newInfo: Metadata) => {
   void updateListMusics([
     {

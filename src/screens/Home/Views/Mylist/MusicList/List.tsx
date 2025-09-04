@@ -1,12 +1,12 @@
 import { playList } from '@/core/player/player'
 import { useMemo, useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, type FlatListProps } from 'react-native'
+import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, type FlatListProps, PanResponder, Animated } from 'react-native'
 
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
 import { getListPosition, getListPrevSelectId, saveListPosition } from '@/utils/data'
 // import { useMusicList } from '@/store/list/hook'
-import { getListMusics, setActiveList } from '@/core/list'
+import { getListMusics, setActiveList, updateListMusicPosition } from '@/core/list'
 import ListItem, { ITEM_HEIGHT } from './ListItem'
 import { createStyle, getRowInfo } from '@/utils/tools'
 import { usePlayInfo, usePlayMusicInfo } from '@/store/player/hook'
@@ -29,6 +29,7 @@ export interface ListType {
   getSelectedList: () => LX.List.ListMusics
   scrollToInfo: (info: LX.Music.MusicInfo) => void
   scrollToTop: () => void
+  setDragMode: (isDragMode: boolean, musicInfo?: LX.Music.MusicInfo, index?: number) => void
 }
 
 const usePlayIndex = () => {
@@ -59,6 +60,51 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
   const rowInfo = useRef(getRowInfo())
   const isShowAlbumName = useSettingValue('list.isShowAlbumName')
   const isShowInterval = useSettingValue('list.isShowInterval')
+
+  // 拖拽相关状态
+  const [isDragMode, setIsDragMode] = useState(false)
+  const [dragItem, setDragItem] = useState<LX.Music.MusicInfo | null>(null)
+  const [dragIndex, setDragIndex] = useState(-1)
+  const dragPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current
+  const dragOpacity = useRef(new Animated.Value(1)).current
+  const [hoveredIndex, setHoveredIndex] = useState(-1)
+
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => isDragMode && dragItem !== null,
+    onMoveShouldSetPanResponder: () => isDragMode && dragItem !== null,
+    onPanResponderMove: (_, gestureState) => {
+      if (!isDragMode || dragItem === null) return
+
+      dragPosition.setValue({ x: 0, y: gestureState.dy })
+
+      // 计算当前拖拽位置对应的索引
+      const rowNum = rowInfo.current.rowNum ?? 1
+      const itemHeight = ITEM_HEIGHT
+      const row = Math.floor(gestureState.moveY / itemHeight)
+      const col = Math.floor(gestureState.moveX / (itemHeight / rowNum))
+      const currentIndex = row * rowNum + col
+
+      if (currentIndex !== hoveredIndex && currentIndex >= 0 && currentIndex < currentList.length) {
+        setHoveredIndex(currentIndex)
+      }
+    },
+    onPanResponderRelease: (_, gestureState) => {
+      if (!isDragMode || dragItem === null) return
+
+      const rowNum = rowInfo.current.rowNum ?? 1
+      const itemHeight = ITEM_HEIGHT
+      const row = Math.floor(gestureState.moveY / itemHeight)
+      const col = Math.floor(gestureState.moveX / (itemHeight / rowNum))
+      const targetIndex = row * rowNum + col
+
+      if (targetIndex >= 0 && targetIndex < currentList.length && targetIndex !== dragIndex) {
+        handleMoveToPosition(dragIndex, targetIndex)
+      }
+
+      handleDragEnd()
+      setHoveredIndex(-1)
+    },
+  })).current
   // console.log('render music list')
 
   useImperativeHandle(ref, () => ({
@@ -71,6 +117,17 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
     },
     setSelectMode(mode) {
       selectModeRef.current = mode
+      // 如果切换到拖拽模式，退出多选模式
+      if (mode === 'drag') {
+        setIsDragMode(true)
+        isMultiSelectModeRef.current = false
+        prevSelectIndexRef.current = -1
+        handleUpdateSelectedList([])
+      } else {
+        setIsDragMode(false)
+        setDragItem(null)
+        setDragIndex(-1)
+      }
     },
     selectAll(isAll) {
       let list: LX.List.ListMusics
@@ -97,6 +154,16 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
         offset: 0,
         animated: true,
       })
+    },
+    setDragMode(isDragMode, musicInfo, index) {
+      setIsDragMode(isDragMode)
+      if (isDragMode && musicInfo && index !== undefined) {
+        setDragItem(musicInfo)
+        setDragIndex(index)
+      } else {
+        setDragItem(null)
+        setDragIndex(-1)
+      }
     },
   }))
 
@@ -240,6 +307,57 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
     onMuiltSelectMode()
   }
 
+  const handleDragStart = (item: LX.Music.MusicInfo, index: number) => {
+    if (selectModeRef.current !== 'drag') return
+    setDragItem(item)
+    setDragIndex(index)
+    setHoveredIndex(-1)
+
+    // 重置拖拽位置
+    dragPosition.setValue({ x: 0, y: 0 })
+
+    // 开始拖拽动画
+    Animated.parallel([
+      Animated.timing(dragOpacity, {
+        toValue: 0.8,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start()
+  }
+
+  const handleDragEnd = () => {
+    if (!dragItem || dragIndex === -1) return
+
+    Animated.parallel([
+      Animated.timing(dragOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(dragPosition, {
+        toValue: { x: 0, y: 0 },
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setDragItem(null)
+      setDragIndex(-1)
+      setHoveredIndex(-1)
+    })
+  }
+
+  const handleMoveToPosition = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    const newList = [...currentList]
+    const [movedItem] = newList.splice(fromIndex, 1)
+    newList.splice(toIndex, 0, movedItem)
+    setList(newList)
+
+    // 更新实际列表位置
+    void updateListMusicPosition(listState.activeListId, toIndex, [movedItem.id])
+  }
+
   const handleScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (listFirstScrollRef.current) {
       listFirstScrollRef.current = false
@@ -249,20 +367,57 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
   }
 
 
-  const renderItem: FlatListType['renderItem'] = ({ item, index }) => (
-    <ListItem
-      item={item}
-      index={index}
-      activeIndex={activeIndex}
-      onPress={handlePress}
-      onLongPress={handleLongPress}
-      onShowMenu={onShowMenu}
-      selectedList={selectedList}
-      rowInfo={rowInfo.current}
-      isShowAlbumName={isShowAlbumName}
-      isShowInterval={isShowInterval}
-    />
-  )
+  const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
+    const isDragging = isDragMode && dragItem?.id === item.id
+    const isHovered = hoveredIndex === index && isDragMode && dragItem?.id !== item.id
+
+    const itemComponent = (
+      <ListItem
+        item={item}
+        index={index}
+        activeIndex={activeIndex}
+        onPress={handlePress}
+        onLongPress={selectModeRef.current === 'drag' ? () => { handleDragStart(item, index) } : handleLongPress}
+        onShowMenu={onShowMenu}
+        selectedList={selectedList}
+        rowInfo={rowInfo.current}
+        isShowAlbumName={isShowAlbumName}
+        isShowInterval={isShowInterval}
+      />
+    )
+
+    if (isDragging) {
+      return (
+        <Animated.View
+          style={{
+            opacity: dragOpacity,
+            transform: [
+              { scale: 1.05 },
+              { translateY: dragPosition.y },
+            ],
+            elevation: 8,
+            zIndex: 100,
+          }}
+          {...panResponder.panHandlers}
+        >
+          {itemComponent}
+        </Animated.View>
+      )
+    }
+
+    return (
+      <Animated.View
+        style={{
+          opacity: isHovered ? 0.5 : 1,
+          transform: isHovered ? [{ scale: 0.95 }] : [],
+          elevation: isHovered ? 4 : 0,
+          zIndex: isHovered ? 50 : 0,
+        }}
+      >
+        {itemComponent}
+      </Animated.View>
+    )
+  }
   const getkey: FlatListType['keyExtractor'] = item => item.id
   const getItemLayout: FlatListType['getItemLayout'] = (data, index) => {
     return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index }
